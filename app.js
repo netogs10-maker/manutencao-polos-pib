@@ -14,12 +14,14 @@ const $=s=>document.querySelector(s);
 const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const DEMO=localStorage.getItem('demo')==='1';
 const DBN=DEMO?'pib-polos-exemplo':'pib-polos';
-const CFGK=DEMO?'cfg-exemplo':'cfg';
+const VER='v5';const CFGK=DEMO?'polos-cfg-exemplo':'polos-cfg';const CFG_ANTIGA=DEMO?'cfg-exemplo':'cfg';
 // ---------- config ----------
 function defCfg(){const r={};POLOS.forEach((p,i)=>r[p]={semana:Math.floor(i/4)+1,dia:[2,2,3,4][i%4]});return{regra:r,inicio:'2026-11',ajustes:{},equipe:'Antônio Neto'}}
-let cfg=JSON.parse(localStorage.getItem(CFGK)||'null')||defCfg();
+// a chave antiga 'cfg' é compartilhada com o app Bombeiros Civis (mesmo domínio github.io): só aproveita se tiver o formato deste app
+function normCfg(c){const d=defCfg();if(!c||typeof c!=='object'||Array.isArray(c))return d;const r={regra:(c.regra&&typeof c.regra==='object')?c.regra:{},inicio:/^\d{4}-\d{2}$/.test(c.inicio||'')?c.inicio:d.inicio,ajustes:(c.ajustes&&typeof c.ajustes==='object')?c.ajustes:{},equipe:typeof c.equipe==='string'&&c.equipe?c.equipe:d.equipe};if(c.v2)r.v2=1;for(const k of Object.keys(r.regra)){const v=r.regra[k];if(!v||typeof v.semana!=='number'||typeof v.dia!=='number')delete r.regra[k]}return r}
+let cfg=(()=>{let c=null;try{c=JSON.parse(localStorage.getItem(CFGK)||'null')}catch(e){}if(!c){try{const o=JSON.parse(localStorage.getItem(CFG_ANTIGA)||'null');if(o&&o.regra&&typeof o.regra==='object')c=o}catch(e){}}return normCfg(c)})();
 (function(){const d=defCfg();cfg.regra=cfg.regra||{};const nr={};for(const p of POLOS){const old=Object.keys(MIGRA).find(k=>MIGRA[k]===p);nr[p]=cfg.regra[p]||d.regra[p]}if(!cfg.v2){Object.assign(nr,d.regra);const aj={};for(const[k,v]of Object.entries(cfg.ajustes||{})){const[p,m]=k.split('|');aj[(MIGRA[p]||p)+'|'+m]=v}cfg.ajustes=aj;cfg.v2=1}cfg.regra=nr;localStorage.setItem(CFGK,JSON.stringify(cfg))})();
-const saveCfg=()=>localStorage.setItem(CFGK,JSON.stringify(cfg));
+const saveCfg=()=>localStorage.setItem(CFGK,JSON.stringify(cfg));saveCfg();
 const ym=d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');
 const iso=d=>ym(d)+'-'+String(d.getDate()).padStart(2,'0');
 const pd=s=>{const[a,b,c]=s.split('-').map(Number);return new Date(a,b-1,c||1)};
@@ -43,7 +45,8 @@ const blobURL=b=>URL.createObjectURL(b);
 const toDataURL=b=>new Promise(ok=>{const r=new FileReader();r.onload=()=>ok(r.result);r.readAsDataURL(b)});
 // ---------- rotas ----------
 const R={};window.addEventListener('hashchange',go);
-async function go(){const[h,...a]=(location.hash.slice(1)||'painel').split('/');document.querySelectorAll('nav a').forEach(x=>x.classList.toggle('on',x.getAttribute('href')==='#'+h));window.scrollTo(0,0);$('#app').innerHTML='<p class="muted">Carregando…</p>';await(R[h]||R.painel)(...a.map(decodeURIComponent))}
+async function go(){const[h,...a]=(location.hash.slice(1)||'painel').split('/');document.querySelectorAll('nav a').forEach(x=>x.classList.toggle('on',x.getAttribute('href')==='#'+h));window.scrollTo(0,0);$('#app').innerHTML='<p class="muted">Carregando…</p>';try{await(R[h]||R.painel)(...a.map(decodeURIComponent))}catch(e){console.error(e);$('#app').innerHTML='<div class="card"><b>Erro ao abrir a tela.</b><p class="muted">'+esc(e.message)+'</p><button class="btn" onclick="location.reload()">Recarregar</button><button class="btn out" onclick="forcarAtualizacao()">🔄 Forçar atualização</button><p class="muted">Versão '+VER+'. Seus dados (visitas, fotos) não são apagados.</p></div>'}}
+window.forcarAtualizacao=async()=>{try{if('serviceWorker'in navigator)for(const r of await navigator.serviceWorker.getRegistrations())await r.unregister();if(window.caches)for(const k of await caches.keys())await caches.delete(k)}catch(e){}location.replace(location.pathname+'?atualizado='+Date.now()+location.hash)};
 const mesAtual=()=>ym(new Date());
 async function mapaVisitas(){const m={};(await getAll('visitas')).forEach(v=>m[v.id]=v);return m}
 const _v=0;const exTag=()=>DEMO?' <span class="ex">EXEMPLO</span>':'';
@@ -73,7 +76,7 @@ h+=`<h3>Assinatura do responsável</h3><div class="card"><input id="assNome" pla
 $('#app').innerHTML=h;assinatura()};
 const item=el=>V0.itens[el.closest('.item').dataset.k];
 let tS;window.salvar=()=>{clearTimeout(tS);tS=setTimeout(()=>put('visitas',V0),300)};
-window.marcar=(b,v)=>{const it=item(b);it.st=v;it.quando=new Date().toISOString();if(!it.por)it.por=V0.equipe.split(',')[0];b.parentNode.querySelectorAll('button').forEach(x=>x.className='');b.className='sel '+v;put('visitas',V0)};
+window.marcar=(b,v)=>{const it=item(b);it.st=v;it.quando=new Date().toISOString();if(!it.por)it.por=String(V0.equipe||'').split(',')[0];b.parentNode.querySelectorAll('button').forEach(x=>x.className='');b.className='sel '+v;put('visitas',V0)};
 window.anexar=async inp=>{const it=item(inp);const th=inp.closest('.item').querySelector('.thumbs');for(const f of inp.files){let b=f;if(f.type.startsWith('image'))b=await comprimir(f);const id=uid();await put('midias',{id,blob:b,tipo:b.type||f.type,nome:f.name,quando:new Date().toISOString()});it.midias.push(id);
 const el=document.createElement(b.type.startsWith('video')||f.type.startsWith('video')?'video':'img');el.src=blobURL(b);if(el.tagName==='VIDEO')el.controls=true;th.appendChild(el)}await put('visitas',V0);inp.value=''};
 function assinatura(){const c=$('#sig');const r=c.getBoundingClientRect();c.width=r.width;c.height=r.height;const g=c.getContext('2d');g.lineWidth=2.5;g.lineCap='round';g.strokeStyle='#0b1f3a';
@@ -122,7 +125,7 @@ $('#app').innerHTML=`<div class="banner"><h2>Proposta – Piloto de 3 meses</h2>
 <h3>Relatórios de exemplo</h3><div class="card">${DEMO?'':'<p class="muted">Ative o modo Exemplo em Ajustes para ver relatórios com dados fictícios.</p>'}<button class="btn sec" onclick="pdfPeriodo([cfg.inicio],'Relatório mensal consolidado')">📄 Relatório mensal</button><button class="btn gold" onclick="pdfPeriodo(mesesPiloto(),'Relatório final do piloto (3 meses)')">📊 Relatório final – 3 meses</button></div>
 <h3>Investimento</h3><div class="card"><b>A definir.</b></div>`};
 // ---------- ajustes / backup ----------
-R.config=async()=>{$('#app').innerHTML=`<h2>Ajustes</h2><div class="card"><label>Equipe padrão (nomes separados por vírgula)</label><input value="${esc(cfg.equipe)}" onchange="cfg.equipe=this.value;saveCfg()"></div>
+R.config=async()=>{$('#app').innerHTML=`<h2>Ajustes</h2><div class="card"><b>Versão do aplicativo: ${VER}</b><p class="muted">Se alguma tela não aparecer ou o app parecer desatualizado, toque abaixo. Os dados salvos (visitas, fotos) NÃO são apagados.</p><button class="btn sec" onclick="forcarAtualizacao()">🔄 Forçar atualização</button></div><div class="card"><label>Equipe padrão (nomes separados por vírgula)</label><input value="${esc(cfg.equipe)}" onchange="cfg.equipe=this.value;saveCfg()"></div>
 <h3>Modo Exemplo (apresentação)</h3><div class="card"><p>${DEMO?'<b style="color:var(--red)">Ativado.</b> Você está vendo dados FICTÍCIOS de exemplo, separados dos dados reais.':'Desativado. Você está vendo os dados reais.'}</p><button class="btn gold" onclick="localStorage.setItem('demo','${DEMO?0:1}');location.hash='#painel';location.reload()">${DEMO?'Voltar aos dados reais':'Ativar modo Exemplo'}</button>${DEMO?'<button class="btn out" onclick="gerarExemplo()">Recriar dados de exemplo</button>':''}</div>
 <h3>Backup</h3><div class="card"><p class="muted">Os dados ficam só neste aparelho. Exporte o backup com frequência (ex.: após cada visita) e guarde no Google Drive ou WhatsApp.</p><button class="btn sec" onclick="exportar()">⬇ Exportar backup (.zip)</button><label class="btn out">⬆ Importar backup<input type="file" accept=".zip" style="display:none" onchange="importar(this.files[0])"></label></div>
 <div class="card muted"><b>Limitação:</b> sem sincronização na nuvem – cada celular guarda seus próprios dados. Uma versão futura pode sincronizar a equipe toda (ex.: Firebase ou Supabase), com acesso pela liderança.</div>`};
@@ -142,5 +145,7 @@ v.concluida=!(m===mesesPiloto()[2]&&n%4===0);if(!v.concluida){await put('visitas
 localStorage.setItem('exemploOk','1');go()};
 // ---------- início ----------
 if(DEMO){$('#demoTag').classList.remove('hidden');document.title='[EXEMPLO] '+document.title}
-if('serviceWorker'in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});
+document.querySelector('.brand small').textContent='Manutenção dos Polos · '+VER;
+if('serviceWorker'in navigator){const tinha=!!navigator.serviceWorker.controller;let rec=false;navigator.serviceWorker.addEventListener('controllerchange',()=>{if(tinha&&!rec){rec=true;location.reload()}});
+navigator.serviceWorker.register('sw.js',{updateViaCache:'none'}).then(reg=>{const up=()=>reg.update().catch(()=>{});document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')up()});setInterval(up,30*60*1000)}).catch(()=>{})}
 (async()=>{try{for(const v of await getAll('visitas')){const n=MIGRA[v.polo];if(n){await del('visitas',v.id);v.polo=n;v.id=visitaId(n,v.mes);if(!await get('visitas',v.id))await put('visitas',v)}}}catch(e){}if(DEMO&&!(await getAll('visitas')).some(v=>v.polo==='Jonnys House'))await gerarExemplo();else if(DEMO&&!(await getAll('visitas')).length)await gerarExemplo();go()})();
